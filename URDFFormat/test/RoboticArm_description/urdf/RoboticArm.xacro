@@ -1,0 +1,86 @@
+<?xml version="1.0" ?>
+<robot name="RoboticArm" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<xacro:include filename="$(find RoboticArm_description)/urdf/materials.xacro" />
+<xacro:include filename="$(find RoboticArm_description)/urdf/RoboticArm.trans" />
+<xacro:include filename="$(find RoboticArm_description)/urdf/RoboticArm.gazebo" />
+<link name="base_link">
+  <inertial>
+    <origin xyz="-0.3762051134687846 -0.6909294295935521 0.008124091122643777" rpy="0 0 0"/>
+    <mass value="0.4337846560885339"/>
+    <inertia ixx="0.000385" iyy="0.000382" izz="0.000624" ixy="3e-06" iyz="-1.5e-05" ixz="-2.4e-05"/>
+  </inertial>
+  <visual>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find RoboticArm_description)/meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find RoboticArm_description)/meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="UpperArm_1">
+  <inertial>
+    <origin xyz="0.02941253787121667 0.11499956046643656 -0.013032606489852938" rpy="0 0 0"/>
+    <mass value="0.6487371661255532"/>
+    <inertia ixx="0.003434" iyy="0.000624" izz="0.003929" ixy="0.0" iyz="0.0" ixz="-4e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.392559 0.685896 -0.057615" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find RoboticArm_description)/meshes/UpperArm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.392559 0.685896 -0.057615" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find RoboticArm_description)/meshes/UpperArm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="ForeArm_1">
+  <inertial>
+    <origin xyz="0.02688459654081704 0.09132325568145622 -0.004713689337876817" rpy="0 0 0"/>
+    <mass value="0.39160535197507124"/>
+    <inertia ixx="0.001301" iyy="0.000143" izz="0.001371" ixy="3.6e-05" iyz="3e-06" ixz="8e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.392559 0.455896 -0.057615" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find RoboticArm_description)/meshes/ForeArm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.392559 0.455896 -0.057615" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find RoboticArm_description)/meshes/ForeArm_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<joint name="Revolute 103" type="revolute">
+  <origin xyz="-0.392559 -0.685896 0.057615" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="UpperArm_1"/>
+  <axis xyz="1.0 0.0 -0.0"/>
+  <limit upper="1.570796" lower="-1.570796" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Revolute 104" type="revolute">
+  <origin xyz="0.0 0.23 0.0" rpy="0 0 0"/>
+  <parent link="UpperArm_1"/>
+  <child link="ForeArm_1"/>
+  <axis xyz="1.0 -0.0 -0.0"/>
+  <limit upper="1.570796" lower="-1.570796" effort="100" velocity="100"/>
+</joint>
+
+</robot>
