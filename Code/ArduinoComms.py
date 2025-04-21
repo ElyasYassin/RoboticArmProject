@@ -1,15 +1,11 @@
-## This is the code for sending data to the Arduino
 import serial
 import time
 
-# Open Serial Port (Adjust to match your Arduino)
-arduino = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)
-time.sleep(2)  # Wait for connection
+ser = serial.Serial('COM3', 9600)
+time.sleep(2)  
 
-# Send angles to Arduino
-theta1, theta2 = 45, 30  # Example values
-command = f"{int(theta1)} {int(theta2)}\n"
-arduino.write(command.encode())
+# Base: A, upper: B, lower: C, gripper G
 
-# Close serial connection
-arduino.close()
+command = "A:90;B:180;C:0;G:0\n"
+ser.write(command.encode())
+ser.close()
