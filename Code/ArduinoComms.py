@@ -13,7 +13,12 @@ const int GRIPPER_MIN  = 55,   GRIPPER_MAX  = 180;
 """
 
 commands = [
-     "A:90; B:61;C:180; G:180\n", 
+    "A:90; B:50;C:130; G:180\n", 
+    "A:90; B:50;C:130;G:0\n", 
+     "A:130; B:90;C:90; G:0\n", 
+     "A:130; B:50;C:130; G:0\n", 
+    "A:130; B:50;C:130; G:180\n", 
+    "A:90; B:90;C:90; G:180\n", 
 
 ]
 
@@ -21,7 +26,7 @@ commands = [
 for cmd in commands:
     ser.write(cmd.encode())
     print(f"Sent: {cmd.strip()}")
-    time.sleep(1)  # Wait for movement to complete
+    time.sleep(3)  # Wait for movement to complete
 
 # Close the serial connection
 ser.close()
