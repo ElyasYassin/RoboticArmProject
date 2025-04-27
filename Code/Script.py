@@ -1,161 +1,101 @@
-import cv2
-import numpy as np
-import cv2.aruco as aruco
-import serial
+from ArduinoComms import send_serial_command 
+from ForwardKinematics import forward_kinematics
 import time
 import math
-import pyttsx3  # Text-to-speech library
-from InverseKinematics import inverse_kinematics_3d, forward_kinematics_3d  # From your InverseKinematics.py
+import numpy as np
 
-# Initialize the text-to-speech engine
-engine = pyttsx3.init()
+# Initialize current joint angles
+base_angle = 90
+shoulder_angle = 90
+elbow_angle = 90
 
-# Set up serial communication with Arduino
-ser = serial.Serial('COM3', 9600)
-time.sleep(2)  # Allow time for the Arduino to reset
+# Target position (from your ArUco detection or pre-known)
+target_x = 20
+target_y = 10
+target_z = 5
 
-# Define IDs for the ArUco markers
-corner_ids = [1, 2, 3, 4]  # TL, TR, BR, BL
-object_id = 5
-bin_id = 6
-bin_coords = (40, 30)  # Example bin position in cm
+# PID parameters
+Kp_base = 0.2
+Ki_base = 0.00
+Kd_base = 0.1
 
-# Define workspace corners (for homography calculation)
-workspace_corners = np.array([
-    [0, 0],       # ID 1: bottom-left
-    [0, 38],      # ID 2: top-left
-    [51, 38],     # ID 3: top-right
-    [51, 0]       # ID 4: bottom-right
-], dtype=np.float32)
+Kp_shoulder = 0.5
+Ki_shoulder = 0.00
+Kd_shoulder = 0.2
 
-# Camera calibration (adjust according to your calibration)
-K = np.array([[3.120468069119191e+03, 0, 1.489565452469227e+03], [0, 3.126550067715977e+03, 2.024657223966020e+03], [0, 0, 1]])  # Example camera matrix
-dist = np.array([0.1, -0.1, 0, 0])  # Example distortion coefficients
+Kp_elbow = 0.5
+Ki_elbow = 0.00
+Kd_elbow = 0.2
 
-# Start video capture
-cap = cv2.VideoCapture(1)
+# Initialize error history
+prev_error_base = 0
+integral_base = 0
 
-# Object position smoothing
-prev_position = np.array([0, 0])
+prev_error_shoulder = 0
+integral_shoulder = 0
 
-# Create a function to speak and log actions
-def speak_and_log(message):
-    print(message)  # Log the message to the console
-    with open("robot_log.txt", "a") as log_file:
-        log_file.write(message + "\n")  # Append to the log file
-    engine.say(message)  # Speak the message
-    engine.runAndWait()  # Wait for the speech to finish
+prev_error_elbow = 0
+integral_elbow = 0
 
-def send_angles_to_arduino(theta1, theta2, theta3):
-    # Retry mechanism for sending angles to Arduino
-    retry_count = 3
-    while retry_count > 0:
-        try:
-            data = f"{theta1},{theta2},{theta3}\n"
-            ser.write(data.encode())
-            time.sleep(1)  # Wait for movement to complete
-            print(f"Sent angles to Arduino: {theta1}, {theta2}, {theta3}")
-            return True
-        except Exception as e:
-            print(f"Error sending data to Arduino: {e}")
-            retry_count -= 1
-            speak_and_log(f"Error in sending data to Arduino, retrying ({retry_count} attempts left)...")
-            time.sleep(2)  # Wait before retrying
-    return False  # Failed after retries
-
-def handle_aruco_detection(marker_positions):
-    if object_id not in marker_positions or bin_id not in marker_positions:
-        speak_and_log("Error: Could not detect object or bin markers.")
-        return False
-    return True
-
-def perform_ik_and_move(target_pos, retries=3):
-    # Retry mechanism for inverse kinematics
-    while retries > 0:
-        try:
-            base, shoulder, elbow = inverse_kinematics_3d(*target_pos)
-            speak_and_log(f"Calculated angles: Base: {base}, Shoulder: {shoulder}, Elbow: {elbow}")
-            # Send to Arduino
-            if send_angles_to_arduino(base, shoulder, elbow):
-                return True
-            else:
-                speak_and_log("Failed to send angles to Arduino. Retrying...")
-                retries -= 1
-                time.sleep(2)
-        except ValueError as e:
-            print(f"IK Error: {e}")
-            speak_and_log(f"IK Error: {e}. Retrying...")
-            retries -= 1
-            time.sleep(2)
-    return False  # Failed after retries
+# Loop settings
+time_step = 0.05  
 
 while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("Error: Could not read frame from camera.")
-        speak_and_log("Error: Could not read frame from camera.")
+    start_time = time.time()
+
+    # this gets the current position
+    current_x, current_y, current_z = forward_kinematics(base_angle, shoulder_angle, elbow_angle)
+
+    # --- 2. COMPUTE: Find error to target ---
+    error_x = target_x - current_x
+    error_y = target_y - current_y
+    error_z = target_z - current_z
+    total_error = (error_x**2 + error_y**2 + error_z**2)**0.5
+
+    if total_error < 0.5:
+        print("Target reached!")
         break
 
-    # Undistort the image
-    undistorted_frame = cv2.undistort(frame, K, dist)
+    # Calculate base error as angular difference
+    desired_base_angle = math.degrees(math.atan2(error_y, error_x))
+    error_base = desired_base_angle - base_angle
 
-    # Detect ArUco markers
-    corners, ids, _ = aruco.detectMarkers(undistorted_frame, aruco.DICT_5X5_100, parameters=aruco.DetectorParameters())
+    # PID for base
+    integral_base += error_base * time_step
+    derivative_base = (error_base - prev_error_base) / time_step
+    base_correction = (Kp_base * error_base) + (Ki_base * integral_base) + (Kd_base * derivative_base)
+    prev_error_base = error_base
 
-    if ids is not None:
-        ids = ids.flatten()
-        marker_positions = {}
+    # PID for shoulder (vertical control)
+    error_shoulder = error_z
+    integral_shoulder += error_shoulder * time_step
+    derivative_shoulder = (error_shoulder - prev_error_shoulder) / time_step
+    shoulder_correction = (Kp_shoulder * error_shoulder) + (Ki_shoulder * integral_shoulder) + (Kd_shoulder * derivative_shoulder)
+    prev_error_shoulder = error_shoulder
 
-        for i, marker_id in enumerate(ids):
-            # Get center of each marker
-            c = corners[i][0]
-            center = c.mean(axis=0)
-            marker_positions[marker_id] = center
+    # PID for elbow (extension control)
+    error_elbow = -error_x  # Elbow flexes to adjust forward reach
+    integral_elbow += error_elbow * time_step
+    derivative_elbow = (error_elbow - prev_error_elbow) / time_step
+    elbow_correction = (Kp_elbow * error_elbow) + (Ki_elbow * integral_elbow) + (Kd_elbow * derivative_elbow)
+    prev_error_elbow = error_elbow
 
-        # Handle marker detection errors
-        if not handle_aruco_detection(marker_positions):
-            continue
+    # --- 3. UPDATE ANGLES ---
+    base_angle += np.clip(base_correction, -5, 5)
+    shoulder_angle += np.clip(shoulder_correction, -5, 5)
+    elbow_angle += np.clip(elbow_correction, -5, 5)
 
-        # Detect object and bin positions
-        if object_id in marker_positions:
-            object_position = marker_positions[object_id]
-            speak_and_log(f"Object detected at workspace position: ({object_position[0]:.2f} cm, {object_position[1]:.2f} cm)")
+    # --- 4. Clamp angles into valid ranges ---
+    base_angle = np.clip(base_angle, 0, 180)
+    shoulder_angle = np.clip(shoulder_angle, 50, 155)
+    elbow_angle = np.clip(elbow_angle, 90, 140)
 
-            # Compute inverse kinematics for object positioning
-            target_pos = (object_position[0], object_position[1], 0)  # Z is 0 as it's on the table
-            if not perform_ik_and_move(target_pos):
-                speak_and_log("Failed to move to object after multiple attempts.")
-                continue  # Skip to next loop iteration if move fails
+    # --- 5. ACTUATE: Send new angles to robot ---
+    send_serial_command(base_angle, shoulder_angle, elbow_angle)
 
-            # Close gripper
-            ser.write("G:180\n".encode())  # Close the gripper (Assuming 180 is full close)
-            time.sleep(1)  # Wait for the gripper to close
-            speak_and_log("Grabbed the object.")
+    print(f"Sent to robot: Base={base_angle:.2f}, Shoulder={shoulder_angle:.2f}, Elbow={elbow_angle:.2f} | Total Error={total_error:.2f}")
 
-        if bin_id in marker_positions:
-            bin_position = marker_positions[bin_id]
-            speak_and_log(f"Bin detected at workspace position: ({bin_position[0]:.2f} cm, {bin_position[1]:.2f} cm)")
-
-            # Compute inverse kinematics for bin positioning
-            target_pos_bin = (bin_position[0], bin_position[1], 0)  # Z is 0 as well for the bin
-            if not perform_ik_and_move(target_pos_bin):
-                speak_and_log("Failed to move to bin after multiple attempts.")
-                continue  # Skip to next loop iteration if move fails
-
-            # Open gripper
-            ser.write("G:0\n".encode())  # Open the gripper
-            time.sleep(1)  # Wait for the gripper to open
-            speak_and_log("Placed the object in the bin.")
-
-    # Draw markers on the frame for visualization
-    aruco.drawDetectedMarkers(undistorted_frame, corners, ids)
-    cv2.imshow("Aruco Workspace Tracker", undistorted_frame)
-
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
-
-# Close the serial connection
-ser.close()
+    # --- 6. Wait for next control cycle ---
+    elapsed = time.time() - start_time
+    sleep_time = max(0, time_step - elapsed)
+    time.sleep(sleep_time)

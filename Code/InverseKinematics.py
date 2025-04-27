@@ -1,68 +1,175 @@
 import math
-import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
 
-# Arm link lengths
-L1 = 21.0  # Upper arm length in cm
-L2 = 18.2 + 7  # Forearm length in cm
+# --- Robot Parameters ---
+BASE_X = 47  # cm
+BASE_Y = -3   # cm
+BASE_Z = 10  # cm
+BASE_HEIGHT = BASE_Z
+L1 = 21  # Upper arm length (cm)
+L2 = 22  # Forearm length (cm)
 
-# Normalize angles for servo (0-180 range)
-def normalize_angle(angle):
-    return max(0, min(180, angle))
+# --- Base Rotation (Yaw) ---
+def solve_base_rotation(x_base, y_base, x_target, y_target):
+    dx = x_target - x_base
+    dy = y_target - y_base
+    theta_base_rad = math.atan2(dy, dx)
+    theta_base_deg = math.degrees(theta_base_rad)
+    base_servo_angle = theta_base_deg
+    return base_servo_angle
 
-# Inverse kinematics with base height included
-def inverse_kinematics_3d(x, y, z):
-    # Calculate base angle (rotation of the base to align with the object)
-    base_rad = math.atan2(x, z)  # Base rotation to reach the target in 3D space
-    base_deg = math.degrees(-base_rad)  # Convert radians to degrees and invert direction
-    base_servo = 90 + base_deg  # Adjust base angle for servo (centered at 90 degrees)
+# --- Corrected Shoulder and Elbow Solver ---
+def solve_shoulder_elbow(x_base, y_base, z_base, x_target, y_target, z_target):
+    dx = x_target - x_base
+    dy = y_target - y_base
+    dz = z_target - z_base
 
-    # Planar distance calculation (ignoring height for now)
-    planar_dist = math.sqrt(x**2 + z**2)
-    rel_y = y  # Y-coordinate in the table plane
-    D = math.sqrt(planar_dist**2 + rel_y**2)
+    r = math.sqrt(dx**2 + dy**2)
+    d = math.sqrt(r**2 + dz**2)
 
-    # Check if the target is out of reach
-    if D > (L1 + L2) or D < abs(L1 - L2):
-        raise ValueError("Target is out of reach")
+    if d > (L1 + L2):
+        raise ValueError(f"Target is out of reach. Distance {d:.2f} cm > Max reach {L1 + L2} cm.")
 
-    # Calculate the angle for the elbow joint (theta2)
-    cos_theta2 = (planar_dist**2 + rel_y**2 - L1**2 - L2**2) / (2 * L1 * L2)
-    theta2 = math.acos(cos_theta2)  # Elbow angle in radians
-    elbow_deg = 90 + math.degrees(theta2)  # Convert to degrees and adjust for servo range
+    cos_elbow = (L1**2 + L2**2 - d**2) / (2 * L1 * L2)
+    cos_elbow = max(-1.0, min(1.0, cos_elbow))
+    elbow_rad = math.acos(cos_elbow)
+    elbow_angle_deg = math.degrees(elbow_rad)
 
-    # Calculate the shoulder angle (theta1)
-    k1 = L1 + L2 * math.cos(theta2)
-    k2 = L2 * math.sin(theta2)
-    theta1 = math.atan2(rel_y, planar_dist) - math.atan2(k2, k1)  # Shoulder angle in radians
-    shoulder_deg = 90 + math.degrees(theta1)  # Convert to degrees and adjust for servo range
+    phi = math.atan2(dz, r)
+    cos_shoulder = (d**2 + L1**2 - L2**2) / (2 * d * L1)
+    cos_shoulder = max(-1.0, min(1.0, cos_shoulder))
+    shoulder_offset_rad = math.acos(cos_shoulder)
 
-    # Invert the shoulder and elbow directions (as per your setup)
-    shoulder_deg = 180 - normalize_angle(shoulder_deg)  # Reverse direction of shoulder angle
-    elbow_deg = normalize_angle(elbow_deg)  # Elbow angle is positive (no inversion needed)
+    shoulder_rad = phi + shoulder_offset_rad
+    shoulder_angle_deg = math.degrees(shoulder_rad)
 
-    # Normalize the base angle for servo
-    base_servo = normalize_angle(base_servo)  # Ensure base angle is within the servo range (0-180)
+    shoulder_angle_deg = max(0, min(90, shoulder_angle_deg))
+    elbow_angle_deg = max(0, min(90, elbow_angle_deg))
 
-    return base_servo, shoulder_deg, elbow_deg
+    return shoulder_angle_deg, elbow_angle_deg
 
-# Helper function to calculate relative position
-def relative_position(object_pos, base_pos):
-    x_rel = object_pos[0] - base_pos[0]
-    y_rel = object_pos[1] - base_pos[1]
-    z_rel = object_pos[2] - base_pos[2]
-    return (x_rel, y_rel, z_rel)
+# --- Full Inverse Kinematics Solver ---
+def inverse_kinematics(x_target, y_target, z_target):
+    base_servo = solve_base_rotation(BASE_X, BASE_Y, x_target, y_target)
+    shoulder_servo, elbow_servo = solve_shoulder_elbow(BASE_X, BASE_Y, BASE_Z, x_target, y_target, z_target)
+    return base_servo, shoulder_servo, elbow_servo
 
-# Example positions
-object_position = (15, 5, 15)  # (x, y, z) in cm, y=0 because it’s on the table
-roboticarm_position = (0, 0, 0)
+# --- Forward Kinematics ---
+def forward_kinematics(base_angle, shoulder_angle, elbow_angle):
+    base_rad = math.radians(base_angle)
+    shoulder_rad = math.radians(shoulder_angle)
+    elbow_rad = math.radians(elbow_angle)
 
-# Calculate relative position of the object to the robotic arm base
-target_pos = relative_position(object_position, roboticarm_position)
-print(f"Relative target position: {target_pos}")
+    forearm_rad = shoulder_rad + elbow_rad - math.radians(90)
 
-# Compute angles and pose
-try:
-    base, shoulder, elbow = inverse_kinematics_3d(*target_pos)
-    print(f"Base angle: {base}°, Shoulder angle: {shoulder}°, Elbow angle: {elbow}°")
-except ValueError as e:
-    print(f"IK Error: {e}")
+    x_upper = L1 * math.cos(shoulder_rad) * math.cos(base_rad)
+    y_upper = L1 * math.cos(shoulder_rad) * math.sin(base_rad)
+    z_upper = BASE_HEIGHT + L1 * math.sin(shoulder_rad)
+
+    x_gripper = x_upper + L2 * math.cos(forearm_rad) * math.cos(base_rad)
+    y_gripper = y_upper + L2 * math.cos(forearm_rad) * math.sin(base_rad)
+    z_gripper = z_upper + L2 * math.sin(forearm_rad)
+
+    return x_gripper, y_gripper, z_gripper
+
+# --- Position Error ---
+def position_error(x_target, y_target, z_target, x_current, y_current, z_current):
+    return math.sqrt((x_target - x_current)**2 + (y_target - y_current)**2 + (z_target - z_current)**2)
+
+# --- Cost Function for Optimization ---
+def cost_function(angles, x_target, y_target, z_target):
+    base_angle, shoulder_angle, elbow_angle = angles
+    x_fk, y_fk, z_fk = forward_kinematics(base_angle, shoulder_angle, elbow_angle)
+    x_fk_world = x_fk + BASE_X
+    y_fk_world = y_fk + BASE_Y
+    return position_error(x_target, y_target, z_target, x_fk_world, y_fk_world, z_fk)
+
+# --- Optimization Solver ---
+def optimize_ik(base_angle, shoulder_angle, elbow_angle, x_target, y_target, z_target):
+    initial_guess = [base_angle, shoulder_angle, elbow_angle]
+    result = minimize(cost_function, initial_guess, args=(x_target, y_target, z_target), method='Nelder-Mead',
+                      options={'xatol': 1e-2, 'fatol': 1e-2, 'maxiter': 100})
+    return result.x
+
+# --- Plot Functions ---
+
+def plot_xy_plane(x_target, y_target):
+    plt.figure(figsize=(10, 8))
+    plt.title("Base Rotation - XY Plane", fontsize=16)
+    plt.plot([BASE_X, x_target], [BASE_Y, y_target], 'r-o', label="Base to Target", markersize=8)
+    plt.xlabel("X (cm)", fontsize=14)
+    plt.ylabel("Y (cm)", fontsize=14)
+    plt.axhline(0, color='k', linestyle='--')
+    plt.axvline(0, color='k', linestyle='--')
+    plt.legend(fontsize=12)
+    plt.grid(True)
+    plt.gca().set_aspect('equal')
+    plt.show()
+
+def plot_yz_plane(shoulder_angle, elbow_angle):
+    plt.figure(figsize=(10, 8))
+    plt.title("Shoulder and Elbow Motion - YZ Plane", fontsize=16)
+
+    plt.plot([0], [BASE_HEIGHT], 'ko', markersize=8)
+
+    shoulder_rad = math.radians(shoulder_angle)
+    elbow_rad = math.radians(elbow_angle)
+
+    y_upper = L1 * math.cos(shoulder_rad)
+    z_upper = BASE_HEIGHT + L1 * math.sin(shoulder_rad)
+    plt.plot([0, y_upper], [BASE_HEIGHT, z_upper], 'b-o', label="Upper Arm", markersize=8)
+
+    forearm_rad = shoulder_rad + elbow_rad - math.radians(90)
+
+    y_forearm = y_upper + L2 * math.cos(forearm_rad)
+    z_forearm = z_upper + L2 * math.sin(forearm_rad)
+    plt.plot([y_upper, y_forearm], [z_upper, z_forearm], 'g-o', label="Forearm", markersize=8)
+
+    plt.xlabel("Y (cm)", fontsize=14)
+    plt.ylabel("Z (cm)", fontsize=14)
+    plt.axhline(0, color='k', linestyle='--')
+    plt.axvline(0, color='k', linestyle='--')
+    plt.legend()
+    plt.grid(True)
+    plt.gca().set_aspect('equal')
+    plt.show()
+
+# --- Main Execution ---
+
+if __name__ == "__main__":
+    x_target = 32
+    y_target = 26
+    z_target = 15
+
+    try:
+        # Solve IK
+        base_angle, shoulder_angle, elbow_angle = inverse_kinematics(x_target, y_target, z_target)
+
+        print(f"Initial IK Angles:")
+        print(f"Base: {base_angle:.2f}°")
+        print(f"Shoulder: {shoulder_angle:.2f}°")
+        print(f"Elbow: {elbow_angle:.2f}°")
+
+        # Optimize using FK
+        base_angle, shoulder_angle, elbow_angle = optimize_ik(base_angle, shoulder_angle, elbow_angle,
+                                                              x_target, y_target, z_target)
+
+        print(f"\nCorrected IK Angles:")
+        print(f"Base: {base_angle:.2f}°")
+        print(f"Shoulder: {shoulder_angle:.2f}°")
+        print(f"Elbow: {elbow_angle:.2f}°")
+
+        # Final FK
+        x_fk, y_fk, z_fk = forward_kinematics(base_angle, shoulder_angle, elbow_angle)
+        print(f"\nCorrected FK Gripper Position:")
+        print(f"X: {x_fk + BASE_X:.2f} cm")
+        print(f"Y: {y_fk + BASE_Y:.2f} cm")
+        print(f"Z: {z_fk:.2f} cm")
+
+        # Plot
+        plot_xy_plane(x_target, y_target)
+        plot_yz_plane(shoulder_angle, elbow_angle)
+
+    except ValueError as e:
+        print(f"Error: {e}")

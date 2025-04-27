@@ -1,32 +1,32 @@
 import serial
 import time
 
+# Open serial port once at the start
 ser = serial.Serial('COM3', 9600)
-time.sleep(2)  
+time.sleep(2)  # Let Arduino reset after serial open
 
-# Base: A, lower: B, upper: C, gripper G
-"""
-const int BASE_MIN     = 60,  BASE_MAX     = 120;
-const int LOWER_MIN    = 50,  LOWER_MAX    = 155;
-const int UPPER_MIN    = 0,  UPPER_MAX    = 180;
-const int GRIPPER_MIN  = 55,   GRIPPER_MAX  = 180;
-"""
-
-commands = [
-    "A:90; B:50;C:130; G:180\n", 
-    "A:90; B:50;C:130;G:0\n", 
-     "A:130; B:90;C:90; G:0\n", 
-     "A:130; B:50;C:130; G:0\n", 
-    "A:130; B:50;C:130; G:180\n", 
-    "A:90; B:90;C:90; G:180\n", 
-
-]
-
-# Send each command with a delay between them
-for cmd in commands:
+def send_serial_command(base_angle, shoulder_angle, elbow_angle, gripper_angle=115):
+    """
+    Sends a command to the Arduino to set servo positions.
+    """
+    # Build the command string exactly like your Arduino expects
+    cmd = f"A:{base_angle:.2f}; B:{shoulder_angle:.2f}; C:{elbow_angle:.2f}; G:{gripper_angle}\n"
     ser.write(cmd.encode())
     print(f"Sent: {cmd.strip()}")
-    time.sleep(3)  # Wait for movement to complete
 
-# Close the serial connection
-ser.close()
+# Don't forget to close serial connection when finished!
+def close_serial():
+    ser.close()
+    
+    
+if __name__ == "__main__":
+    send_serial_command(117.35, 49.65, 169.65)
+    time.sleep(5)
+    send_serial_command(117.35, 49.65, 169.65, 0)
+    time.sleep(5)
+    send_serial_command(90, 90, 90, 0)
+    time.sleep(5)
+    send_serial_command(90, 90, 90, 180)
+
+    
+    
