@@ -19,13 +19,13 @@ def close_serial():
     
     
 if __name__ == "__main__":
-    time.sleep(5)
+    time.sleep(2)
     send_serial_command(90, 90, 90, 0)
+    time.sleep(4)
+    send_serial_command(110.12, 61.68, 160.8)
     time.sleep(5)
-    send_serial_command(84, 39, 125)
-    time.sleep(5)
-    send_serial_command(84, 39, 125, 180)
-    time.sleep(5)
+    send_serial_command(110.12, 61.68, 160.8, 180)
+    time.sleep(3)
     send_serial_command(90, 90, 90, 180)
 
     

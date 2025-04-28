@@ -4,26 +4,29 @@ import cv2.aruco as aruco
 import threading
 import time
 
-# Global store for detected objects
+# --- Global store for detected objects ---
 detected_objects = {}
 
-# Mapping object IDs to colors
+# --- Mapping object IDs to colors ---
 id_to_color = {
     5: "purple",
-    6: "blue",
+    6: "purple",
     7: "purple",
     8: "green"
 }
 
-# Thread control flag
+# --- Thread control flag ---
 cv_thread_running = True
+
+# --- DEBUG flag ---
+DEBUG = True  # Set to True to print detailed info
 
 def cv_thread():
     global detected_objects
 
     # Setup ArUco parameters
-    corner_ids = [1, 2, 3, 4]  # workspace corners
-    object_ids = [5, 6, 7, 8]  # object markers
+    corner_ids = [1, 2, 3, 4]  # Workspace corners
+    object_ids = [5, 6, 7, 8]  # Object markers
 
     workspace_corners = np.array([
         [81, 0],    # ID 1: bottom-right
@@ -58,10 +61,16 @@ def cv_thread():
             ids = ids.flatten()
             marker_positions = {}
 
+            if DEBUG:
+                print(f"[DEBUG] Detected marker IDs: {ids}")
+
             for i, marker_id in enumerate(ids):
                 c = corners[i][0]
                 center = c.mean(axis=0)
                 marker_positions[marker_id] = center
+
+                if DEBUG:
+                    print(f"[DEBUG] Marker {marker_id} pixel center: {center}")
 
             if all(id in marker_positions for id in corner_ids):
                 image_points = np.array([marker_positions[i] for i in corner_ids], dtype=np.float32)
@@ -73,21 +82,25 @@ def cv_thread():
                         obj_world = cv2.perspectiveTransform(obj_pixel, H)
                         x_cm, y_cm = obj_world[0][0]
 
-                        # Smooth
                         smoothed_position = 0.8 * prev_positions[obj_id] + 0.2 * np.array([x_cm, y_cm])
                         prev_positions[obj_id] = smoothed_position
 
-                        # Update detected_objects dict
                         color = id_to_color.get(obj_id, "unknown")
                         detected_objects[color] = (smoothed_position[0], smoothed_position[1])
 
-        # Slow update to reduce CPU usage
+                        if DEBUG:
+                            print(f"[DEBUG] Object ID {obj_id} ({color}): World position X={x_cm:.2f} cm, Y={y_cm:.2f} cm")
+                            print(f"[DEBUG] Smoothed Position -> X={smoothed_position[0]:.2f} cm, Y={smoothed_position[1]:.2f} cm")
+
+        # Slow down thread loop to save CPU
         time.sleep(0.2)
 
     cap.release()
     cv2.destroyAllWindows()
 
 def start_cv_thread():
+    global cv_thread_running
+    cv_thread_running = True
     t = threading.Thread(target=cv_thread)
     t.daemon = True
     t.start()
@@ -95,11 +108,10 @@ def start_cv_thread():
 def stop_cv_thread():
     global cv_thread_running
     cv_thread_running = False
-    
+
 if __name__ == "__main__":
     start_cv_thread()
 
     while True:
         time.sleep(1)
-        
         print(detected_objects)

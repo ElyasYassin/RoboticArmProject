@@ -10,14 +10,14 @@ purple_upper = np.array([155, 255, 255], np.uint8)
 
 kernel = np.ones((5, 5), "uint8")
 
-def detect_color_from_top_half_once(frame, min_pixel_threshold=100):
+def detect_color_from_top_half_once(frame, min_pixel_threshold=100, debug=False):
     """
     Single frame color detection (green, purple, or unknown).
     """
     h, w, _ = frame.shape
 
     # Only work on top half
-    top_half = frame[0:h//2, :]
+    top_half = frame[0:h//2:]
 
     # Convert to HSV
     hsv_top = cv2.cvtColor(top_half, cv2.COLOR_BGR2HSV)
@@ -34,23 +34,30 @@ def detect_color_from_top_half_once(frame, min_pixel_threshold=100):
     green_pixels = cv2.countNonZero(green_mask)
     purple_pixels = cv2.countNonZero(purple_mask)
 
+    if debug:
+        print(f"[DEBUG] Green pixels: {green_pixels}, Purple pixels: {purple_pixels}")
+
     detected_color = "unknown"
     if green_pixels > purple_pixels and green_pixels > min_pixel_threshold:
         detected_color = "green"
     elif purple_pixels > green_pixels and purple_pixels > min_pixel_threshold:
         detected_color = "purple"
 
+    if debug:
+        print(f"[DEBUG] Detected color: {detected_color}")
+
     return detected_color
 
-def detect_color(camera_index=1, max_attempts=10, min_pixel_threshold=100, visualize=False):
+def detect_color(camera_index=1, max_attempts=10, min_pixel_threshold=100, visualize=False, debug=False):
     """
     Repeatedly captures frames and tries to detect color up to max_attempts.
 
     Args:
-        camera_index (int): Webcam index (default 0).
+        camera_index (int): Webcam index (default 1).
         max_attempts (int): How many frames to try before giving up.
         min_pixel_threshold (int): Minimum pixel count to accept detection.
         visualize (bool): If True, shows debug window.
+        debug (bool): If True, prints detailed pixel information.
 
     Returns:
         detected_color (str): 'green', 'purple', or 'unknown'
@@ -58,7 +65,7 @@ def detect_color(camera_index=1, max_attempts=10, min_pixel_threshold=100, visua
     cap = cv2.VideoCapture(camera_index)
 
     if not cap.isOpened():
-        print("Camera not accessible!")
+        print("[ERROR] Camera not accessible!")
         return "unknown"
 
     detected_color = "unknown"
@@ -66,10 +73,10 @@ def detect_color(camera_index=1, max_attempts=10, min_pixel_threshold=100, visua
     for attempt in range(max_attempts):
         ret, frame = cap.read()
         if not ret:
-            print("Failed to capture frame.")
+            print("[ERROR] Failed to capture frame.")
             continue
 
-        detected_color = detect_color_from_top_half_once(frame, min_pixel_threshold=min_pixel_threshold)
+        detected_color = detect_color_from_top_half_once(frame, min_pixel_threshold=min_pixel_threshold, debug=debug)
 
         if visualize:
             annotated_frame = frame.copy()
@@ -78,16 +85,20 @@ def detect_color(camera_index=1, max_attempts=10, min_pixel_threshold=100, visua
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
             cv2.line(annotated_frame, (0, h//2), (w, h//2), (0, 255, 255), 2)
             cv2.imshow("Color Detection Debug", annotated_frame)
-            cv2.waitKey(1)
+            cv2.waitKey(5000)
 
         if detected_color != "unknown":
-            print(f"Detected {detected_color} after {attempt+1} attempts.")
+            print(f"[INFO] Detected {detected_color} after {attempt+1} attempts.")
             break
 
     cap.release()
     cv2.destroyAllWindows()
 
     if detected_color == "unknown":
-        print(f"Failed to detect color after {max_attempts} attempts.")
+        print(f"[WARN] Failed to detect color after {max_attempts} attempts.")
 
     return detected_color
+
+if __name__ == "__main__":
+    # Simple test
+    detect_color(camera_index=1, max_attempts=10, visualize=True, debug=True)

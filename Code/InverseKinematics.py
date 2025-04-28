@@ -138,8 +138,8 @@ def plot_yz_plane(shoulder_angle, elbow_angle):
 # --- Main Execution ---
 
 if __name__ == "__main__":
-    x_target = 51
-    y_target = 35
+    x_target = 36.09894427265923
+    y_target = 26.75232141596969
     z_target = 25
 
     try:
