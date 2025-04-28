@@ -138,9 +138,9 @@ def plot_yz_plane(shoulder_angle, elbow_angle):
 # --- Main Execution ---
 
 if __name__ == "__main__":
-    x_target = 32
-    y_target = 26
-    z_target = 15
+    x_target = 51
+    y_target = 35
+    z_target = 25
 
     try:
         # Solve IK

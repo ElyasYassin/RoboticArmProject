@@ -1,101 +1,105 @@
 import cv2
 import numpy as np
 import cv2.aruco as aruco
+import threading
+import time
 
-# Define IDs
-corner_ids = [1, 2, 3, 4]  # Workspace corners
-object_ids = [5, 6, 7, 8]  # Multiple objects now
+# Global store for detected objects
+detected_objects = {}
 
-# Real-world positions of the 4 corners in cm
-workspace_corners = np.array([
-    [81, 0],    # ID 1: bottom-right
-    [81, 51],   # ID 2: top-right
-    [0, 51],    # ID 3: top-left
-    [0, 0]      # ID 4: bottom-left
-], dtype=np.float32)
+# Mapping object IDs to colors
+id_to_color = {
+    5: "purple",
+    6: "blue",
+    7: "purple",
+    8: "green"
+}
 
-# Camera calibration
-K = np.array([
-    [3.120468069119191e+03, 0, 1.489565452469227e+03],
-    [0, 3.126550067715977e+03, 2.024657223966020e+03],
-    [0, 0, 1]
-])
-dist = np.array([0.202498358552109, -0.301802564296554, 0, 0])  # [k1, k2, p1, p2]
+# Thread control flag
+cv_thread_running = True
 
-# ArUco dictionary and parameters
-aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_5X5_100)
-parameters = aruco.DetectorParameters()
+def cv_thread():
+    global detected_objects
 
-# Start video capture
-cap = cv2.VideoCapture(1)
+    # Setup ArUco parameters
+    corner_ids = [1, 2, 3, 4]  # workspace corners
+    object_ids = [5, 6, 7, 8]  # object markers
 
-# Smoothing filter for object positions
-prev_positions = {obj_id: np.array([0.0, 0.0]) for obj_id in object_ids}
+    workspace_corners = np.array([
+        [81, 0],    # ID 1: bottom-right
+        [81, 51],   # ID 2: top-right
+        [0, 51],    # ID 3: top-left
+        [0, 0]      # ID 4: bottom-left
+    ], dtype=np.float32)
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+    K = np.array([
+        [3.120468069119191e+03, 0, 1.489565452469227e+03],
+        [0, 3.126550067715977e+03, 2.024657223966020e+03],
+        [0, 0, 1]
+    ])
+    dist = np.array([0.202498358552109, -0.301802564296554, 0, 0])
 
-    # Undistort the frame
-    undistorted_frame = cv2.undistort(frame, K, dist)
+    aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_5X5_100)
+    parameters = aruco.DetectorParameters()
 
-    # Detect markers
-    corners, ids, _ = aruco.detectMarkers(undistorted_frame, aruco_dict, parameters=parameters)
+    cap = cv2.VideoCapture(1)
 
-    if ids is not None:
-        ids = ids.flatten()
-        marker_positions = {}
+    prev_positions = {obj_id: np.array([0.0, 0.0]) for obj_id in object_ids}
 
-        for i, marker_id in enumerate(ids):
-            # Get center of each marker
-            c = corners[i][0]
-            center = c.mean(axis=0)
-            marker_positions[marker_id] = center
+    while cv_thread_running:
+        ret, frame = cap.read()
+        if not ret:
+            continue
 
-        # If all 4 corners are detected
-        if all(id in marker_positions for id in corner_ids):
-            image_points = np.array([marker_positions[i] for i in corner_ids], dtype=np.float32)
+        undistorted_frame = cv2.undistort(frame, K, dist)
+        corners, ids, _ = aruco.detectMarkers(undistorted_frame, aruco_dict, parameters=parameters)
 
-            # Compute homography
-            H, status = cv2.findHomography(image_points, workspace_corners, cv2.RANSAC)
+        if ids is not None:
+            ids = ids.flatten()
+            marker_positions = {}
 
-            # Loop through each object
-            for obj_id in object_ids:
-                if obj_id in marker_positions:
-                    obj_pixel = np.array([[marker_positions[obj_id]]], dtype=np.float32)
-                    obj_world = cv2.perspectiveTransform(obj_pixel, H)
-                    x_cm, y_cm = obj_world[0][0]
+            for i, marker_id in enumerate(ids):
+                c = corners[i][0]
+                center = c.mean(axis=0)
+                marker_positions[marker_id] = center
 
-                    # Apply smoothing
-                    smoothed_position = 0.8 * prev_positions[obj_id] + 0.2 * np.array([x_cm, y_cm])
-                    prev_positions[obj_id] = smoothed_position
+            if all(id in marker_positions for id in corner_ids):
+                image_points = np.array([marker_positions[i] for i in corner_ids], dtype=np.float32)
+                H, status = cv2.findHomography(image_points, workspace_corners, cv2.RANSAC)
 
-                    print(f"Object {obj_id} detected at workspace position: ({smoothed_position[0]:.2f} cm, {smoothed_position[1]:.2f} cm)")
+                for obj_id in object_ids:
+                    if obj_id in marker_positions:
+                        obj_pixel = np.array([[marker_positions[obj_id]]], dtype=np.float32)
+                        obj_world = cv2.perspectiveTransform(obj_pixel, H)
+                        x_cm, y_cm = obj_world[0][0]
 
-                    # Draw on the frame
-                    cv2.circle(undistorted_frame, tuple(marker_positions[obj_id].astype(int)), 5, (0, 255, 0), -1)
-                    cv2.putText(undistorted_frame, f"ID {obj_id}: ({smoothed_position[0]:.1f}, {smoothed_position[1]:.1f}) cm",
-                                tuple(marker_positions[obj_id].astype(int) + np.array([10, -10])),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                        # Smooth
+                        smoothed_position = 0.8 * prev_positions[obj_id] + 0.2 * np.array([x_cm, y_cm])
+                        prev_positions[obj_id] = smoothed_position
 
-        # Draw and color-code the corners
-        for marker_id, position in marker_positions.items():
-            if marker_id == 1:
-                cv2.drawMarker(undistorted_frame, tuple(position.astype(int)), (0, 0, 255), cv2.MARKER_CROSS)
-            elif marker_id == 2:
-                cv2.drawMarker(undistorted_frame, tuple(position.astype(int)), (0, 255, 0), cv2.MARKER_STAR)
-            elif marker_id == 3:
-                cv2.drawMarker(undistorted_frame, tuple(position.astype(int)), (255, 0, 0), cv2.MARKER_TILTED_CROSS)
-            elif marker_id == 4:
-                cv2.drawMarker(undistorted_frame, tuple(position.astype(int)), (0, 255, 255), cv2.MARKER_DIAMOND)
+                        # Update detected_objects dict
+                        color = id_to_color.get(obj_id, "unknown")
+                        detected_objects[color] = (smoothed_position[0], smoothed_position[1])
 
-    # Draw all detected markers
-    aruco.drawDetectedMarkers(undistorted_frame, corners, ids)
-    cv2.imshow("Aruco Workspace Tracker", undistorted_frame)
+        # Slow update to reduce CPU usage
+        time.sleep(0.2)
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+    cap.release()
+    cv2.destroyAllWindows()
 
-cap.release()
-cv2.destroyAllWindows()
+def start_cv_thread():
+    t = threading.Thread(target=cv_thread)
+    t.daemon = True
+    t.start()
+
+def stop_cv_thread():
+    global cv_thread_running
+    cv_thread_running = False
+    
+if __name__ == "__main__":
+    start_cv_thread()
+
+    while True:
+        time.sleep(1)
+        
+        print(detected_objects)

@@ -23,6 +23,8 @@ def speak(text):
 # ---------------------------
 # Load Vosk Model
 # ---------------------------
+
+# Change this based on your file location
 model_path = r"C:\Users\Elyas\OneDrive - The University of Colorado Denver\Desktop\Projects\robotic-arm\Code\vosk-model-small-en-us-0.15"  # <<< put your correct path here
 model = Model(model_path)
 
@@ -62,11 +64,7 @@ def handle_command(text):
     print(f"Recognized Command: {text}")
 
     if "pick up" in text:
-        phrase = random.choice([
-            "On it boss, getting the object!",
-            "Phew, hope this one's light!",
-            "Time to grab the prize!"
-        ])
+        phrase = "What color of b"
         speak(phrase, emotion="excited")
         # Robotic arm pickup code
 
