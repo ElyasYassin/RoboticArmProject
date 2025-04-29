@@ -68,6 +68,7 @@ The full system integrates **computer vision**, **robotics control**, **voice fe
 - **Webcam** (for color and marker detection)
 - External 5V/6V **power supply** for servos (recommended)
 
+For more details check out the stl files for the model, credit goes to https://www.youtube.com/watch?v=wnse-NYCXL4 for the robotic arm and https://www.thingiverse.com/thing:1015238 for the gripper.
 ---
 
 ## 🧩 Software Stack
