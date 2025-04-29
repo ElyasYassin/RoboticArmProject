@@ -75,15 +75,23 @@ def main_loop():
             
             speak(f"Moving towards the {detected_color.capitalize()} bin.")
 
-            send_serial_command(90, 90, 90, 0)
-            time.sleep(4)
-            send_serial_command(base_angle, shoulder_angle, 180 - elbow_angle, 0)
+            base_angle = max(0, base_angle)
+            shoulder_angle = max(0, shoulder_angle)
+            elbow_angle = max(0, elbow_angle)
+
+            
+            send_serial_command(base_angle, shoulder_angle, 180 - elbow_angle, 0)  # Move to bin, holding object
             time.sleep(8)
-            send_serial_command(base_angle, shoulder_angle, 180 - elbow_angle, 180)
-            time.sleep(9)
-            send_serial_command(90, 90, 90, 80)
-            time.sleep(3)
-             
+
+            send_serial_command(base_angle, shoulder_angle, 180 - elbow_angle, 180)  # Open gripper
+            time.sleep(3)  # <-- WAIT HERE for object to fall out!!
+
+            send_serial_command(90, 90, 90, 180)  # Move back with gripper still open
+            time.sleep(4)
+
+            send_serial_command(90, 90, 90, 80)  # Close gripper back to standby
+            time.sleep(2)
+            
             speak(f"{detected_color.capitalize()} object placed in bin. Returning to standby.")
             time.sleep(2)
 
