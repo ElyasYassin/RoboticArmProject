@@ -1,4 +1,5 @@
 # Robotic Arm: Autonomous Pick and Place System
+# Video of presentation: https://www.youtube.com/shorts/ZcT1MkRsVbs
 
 ## 📚 Project Overview
 
